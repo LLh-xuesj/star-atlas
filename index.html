@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>识星 · 星空学习台</title>
+<meta name="description" content="离线可用的认星工具：交互星图、88 星座、110 梅西耶 + 15 NGC、45 张官方配图、行星月亮，配图鉴与测验。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23070b14'/%3E%3Cpath d='M16 5c.8 6.1 3.1 8.4 9.2 9.2-6.1.8-8.4 3.1-9.2 9.2-.8-6.1-3.1-8.4-9.2-9.2C12.9 13.4 15.2 11.1 16 5Z' fill='%237ee0ff'/%3E%3Ccircle cx='25' cy='25' r='2.4' fill='%235b8cff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css?v=mvccfz6p">
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2.6c.6 4.6 2.3 6.4 6.9 7-4.6.6-6.3 2.4-6.9 7-.6-4.6-2.3-6.4-6.9-7 4.6-.6 6.3-2.4 6.9-7Z" fill="currentColor"/><circle cx="19" cy="18.8" r="1.9" fill="currentColor" opacity=".5"/></symbol>
+  <symbol id="i-city" viewBox="0 0 24 24"><path d="M12 21s7-5.3 7-11a7 7 0 1 0-14 0c0 5.7 7 11 7 11Z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.4" fill="currentColor"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.6V12l3.2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.6 8.2 4.4-8.2 4.4-8.2-4.4L12 3.6Z" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="m4.4 12.6 7.6 4.1 7.6-4.1M4.4 16.4l7.6 4.1 7.6-4.1" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" opacity=".55"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.6 18 12 8 18.4V5.6Z" fill="currentColor"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.4 5.6h2.6v12.8H8.4zM13 5.6h2.6v12.8H13z" fill="currentColor"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 11.2h12v1.6H6z" fill="currentColor"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M11.2 6h1.6v12h-1.6zM6 11.2h12v1.6H6z" fill="currentColor"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M4.6 11.4 12 5l7.4 6.4M6.6 10.6V19h10.8v-8.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.6 6.6 10.8 10.8M17.4 6.6 6.6 17.4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header>
+  <div class="brand">
+    <svg class="mark"><use href="#i-star"/></svg>
+    <div class="brand-txt"><b>识星</b><span>STAR ATLAS</span></div>
+  </div>
+  <nav id="tabs">
+    <button data-tab="chart" class="on">星图</button>
+    <button data-tab="atlas">图鉴</button>
+    <button data-tab="quiz">测验</button>
+    <button data-tab="about">关于</button>
+  </nav>
+  <div id="hstat"></div>
+</header>
+
+<main>
+  <!-- ========== 星图 ========== -->
+  <section id="tab-chart" class="tab on">
+    <div id="toolbar">
+      <div class="tgroup">
+        <span class="tg-ico"><svg><use href="#i-city"/></svg></span>
+        <select id="city"></select>
+        <input id="lat" type="number" step="0.1" min="-90" max="90" title="纬度（北正）">
+        <input id="lon" type="number" step="0.1" min="-180" max="180" title="经度（东正）">
+      </div>
+      <div class="tgroup">
+        <span class="tg-ico"><svg><use href="#i-clock"/></svg></span>
+        <input id="dt" type="datetime-local" step="60">
+        <label class="ck"><input id="live" type="checkbox" checked>实时</label>
+        <button id="play" class="iconbtn" title="播放 / 暂停时间流逝"><svg><use href="#i-play"/></svg></button>
+        <select id="speed" title="时间流速">
+          <option value="1">×1</option>
+          <option value="60">×60</option>
+          <option value="600" selected>×600</option>
+          <option value="3600">×3600</option>
+          <option value="86400">×1 天/秒</option>
+        </select>
+      </div>
+      <div class="tgroup" id="toggles">
+        <span class="tg-ico"><svg><use href="#i-layers"/></svg></span>
+        <label class="ck"><input type="checkbox" data-opt="lines" checked>连线</label>
+        <label class="ck"><input type="checkbox" data-opt="names" checked>星座名</label>
+        <label class="ck"><input type="checkbox" data-opt="starNames" checked>星名</label>
+        <label class="ck"><input type="checkbox" data-opt="messierLabels" checked>深空编号</label>
+        <label class="ck"><input type="checkbox" data-opt="planets" checked>行星月亮</label>
+        <label class="ck"><input type="checkbox" data-opt="planetNames" checked>行星名</label>
+        <label class="ck"><input type="checkbox" data-opt="grid">网格</label>
+        <label class="ck"><input type="checkbox" data-opt="ast">四季图形</label>
+      </div>
+    </div>
+
+    <div id="chartwrap">
+      <canvas id="sky"></canvas>
+      <div id="tooltip"></div>
+      <div id="viewhud"></div>
+      <div id="zoomdock">
+        <button id="zoomin" title="放大"><svg><use href="#i-plus"/></svg></button>
+        <button id="zoomout" title="缩小"><svg><use href="#i-minus"/></svg></button>
+        <button id="resetview" title="复位视图（双击星图同效）"><svg><use href="#i-home"/></svg></button>
+      </div>
+      <div id="legend"></div>
+      <div id="toast"></div>
+      <aside id="infopanel" class="hidden">
+        <button id="closeinfo" title="关闭"><svg><use href="#i-close"/></svg></button>
+        <div id="infocontent"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ========== 图鉴 ========== -->
+  <section id="tab-atlas" class="tab">
+    <div class="subtabs">
+      <button data-cat="stars" class="on">亮星</button>
+      <button data-cat="cons">星座</button>
+      <button data-cat="messier">深空天体</button>
+    </div>
+    <div class="atlas-body">
+      <div id="atlas-list"></div>
+      <div id="atlas-detail"><div class="empty">从左侧选择一个天体，查看它的资料与最佳观测时间</div></div>
+    </div>
+  </section>
+
+  <!-- ========== 测验 ========== -->
+  <section id="tab-quiz" class="tab">
+    <div class="quiz-head">
+      <div class="quiz-modes">
+        <button data-mode="star" class="on">① 认亮星</button>
+        <button data-mode="con">② 认星座</button>
+        <button data-mode="messier">③ 梅西耶</button>
+      </div>
+      <div id="quiz-stats"></div>
+    </div>
+    <div id="quiz-body">
+      <div id="quiz-stage"><canvas id="quizsky"></canvas></div>
+      <aside id="quiz-rail">
+        <div id="quiz-question"></div>
+        <div id="quiz-options"></div>
+        <div id="quiz-feedback"></div>
+        <button id="quiz-next" class="hidden">下一题 →</button>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ========== 关于 ========== -->
+  <section id="tab-about" class="tab">
+    <div class="about" id="aboutcontent"></div>
+  </section>
+</main>
+
+<div id="lightbox" class="hidden" role="dialog" aria-modal="true" aria-label="图片大图">
+  <button id="lbclose" aria-label="关闭"><svg><use href="#i-close"/></svg></button>
+  <img id="lbimg" alt="">
+  <div id="lbcap"></div>
+</div>
+<script src="js/data-sky.js?v=mvccfz6p"></script>
+<script src="js/photos.js?v=mvccfz6p"></script>
+<script src="js/sky.js?v=mvccfz6p"></script>
+<script src="js/app.js?v=mvccfz6p"></script>
+</body>
+</html>

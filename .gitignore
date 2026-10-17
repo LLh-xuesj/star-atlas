@@ -1,0 +1,7 @@
+node_modules/
+__pycache__/
+gen/.photos-cache/
+_contact.html
+.DS_Store
+Thumbs.db
+*.log
