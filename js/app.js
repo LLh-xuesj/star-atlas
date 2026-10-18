@@ -67,7 +67,13 @@ function sizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   dirty();
 }
-window.addEventListener('resize', () => { sizeCanvas(); sizeQuizCanvas(); });
+window.addEventListener('resize', () => {
+  sizeCanvas(); sizeQuizCanvas();
+  if (drag) {   // 拖动中改窗口大小：同步缓存的画布几何，避免下一帧跳一下
+    drag.rect = canvas.getBoundingClientRect();
+    drag.w = canvas.clientWidth; drag.h = canvas.clientHeight; drag.R = viewR();
+  }
+});
 
 function draw() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
@@ -124,8 +130,8 @@ function tickBody(ts) {
   if (state.needRender) { state.needRender = false; draw(); }
 }
 function tick(ts) { tickBody(ts); requestAnimationFrame(tick); }
-// 隐藏标签页里 rAF 会被暂停，用定时器兜底驱动
-setInterval(() => tickBody(performance.now()), 300);
+// 隐藏标签页里 rAF 会被暂停，用定时器兜底驱动；可见时交给 rAF，避免多画一帧
+setInterval(() => { if (document.hidden) tickBody(performance.now()); }, 300);
 
 // ---------- 工具栏 ----------
 // 播放按钮图标随状态切换（SVG symbol）
@@ -146,9 +152,13 @@ function updateHstat() {
     `<span>${Math.abs(state.lat).toFixed(1)}°${io} ${Math.abs(state.lon).toFixed(1)}°${io2}</span>` +
     `<span class="sep"></span><span>${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} ${p(t.getHours())}:${p(t.getMinutes())}</span>`;
 }
-// 星图左上角的视角读数：高度角 / 方位 / 滚转 / 缩放（拖动时实时更新）
-let vhudLast = '';
-function updateViewHud() {
+// 星图左上角的视角读数：高度角 / 方位 / 滚转 / 缩放。
+// 拖动时最多约 11 次/秒更新 DOM——每帧重建 innerHTML 会打断合成，看起来就是抽动。
+let vhudLast = '', vhudT = 0;
+function updateViewHud(force) {
+  const now = performance.now();
+  if (!force && drag && now - vhudT < 90) return;
+  vhudT = now;
   const roll = Math.round((chartScene && chartScene.roll) || 0);
   const azN = ((state.viewAz % 360) + 360) % 360;
   const s = state.viewAlt.toFixed(1) + '|' + Math.round(azN) + '|' + state.zoom.toFixed(2) + '|' + roll;
@@ -229,7 +239,10 @@ canvas.addEventListener('pointerdown', e => {
   const [sx, sy] = canvasXY(e);
   const sc = freshScene();
   const anchor = sc ? unprojectView(sc, sx, sy) : null;   // 按住的那一点天区，拖动时钉在光标上
-  drag = { x: e.clientX, y: e.clientY, sx, sy, anchor, moved: 0, id: e.pointerId };
+  $('#tooltip').style.display = 'none';
+  // 缓存画布尺寸/位置：拖动期间避免每次 pointermove 都读 clientWidth/getBoundingClientRect
+  drag = { x: e.clientX, y: e.clientY, sx, sy, anchor, moved: 0, id: e.pointerId,
+    rect: canvas.getBoundingClientRect(), w: canvas.clientWidth, h: canvas.clientHeight, R: viewR() };
   suppressClick = false;
   canvas.style.cursor = 'grabbing';
   try { canvas.setPointerCapture(e.pointerId); } catch { }
@@ -239,13 +252,12 @@ canvas.addEventListener('pointermove', e => {
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX; drag.y = e.clientY;
     drag.moved += Math.abs(dx) + Math.abs(dy);
-    const R = viewR() * state.zoom;
+    const w = drag.w, h = drag.h, R = drag.R * state.zoom;
     if ((Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) && R > 0) {
-      const w = canvas.clientWidth, h = canvas.clientHeight;
-      const [sx, sy] = canvasXY(e);
+      const sx = e.clientX - drag.rect.left, sy = e.clientY - drag.rect.top;
       let v = null;
       if (drag.anchor) {   // 先把「按住的那一点」钉到光标位置（roll 保持 0）
-        v = panViewAnchored(state.viewAlt, state.viewAz, sx - drag.sx, sy - drag.sy, w, h, viewR(), state.zoom,
+        v = panViewAnchored(state.viewAlt, state.viewAz, sx - drag.sx, sy - drag.sy, w, h, drag.R, state.zoom,
           drag.anchor.alt, drag.anchor.az, drag.sx, drag.sy);
         if (!(v.err < 3)) v = null;   // 高度角触界 / 近极点退化 → 退回纯方位-高度增量
       }
@@ -267,6 +279,7 @@ function endDrag(e) {
   if (!drag || (e && e.pointerId !== drag.id)) return;
   try { canvas.releasePointerCapture(drag.id); } catch { }
   drag = null; canvas.style.cursor = 'grab';
+  updateViewHud(true);   // 拖动结束后强制刷新一次读数（拖动中限频）
 }
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);

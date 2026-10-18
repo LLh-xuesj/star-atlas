@@ -543,29 +543,34 @@ function renderScene(ctx, sc, state, w, h) {
       ctx.stroke();
     }
   }
-  // 地平圈 + 地平线下遮罩。
-  // 球极投影把「地平线以下」映射到地平线圆的某一侧，到底在圆内还是圆外取决于视角在天上还是地下；
-  // 所以先找一个确定在地面下的屏幕点（反投影后 alt<0）判断方向，再用 evenodd 只填屏幕内的那一侧。
-  // 旧写法直接填地平线路径的内部，视角朝上时整个屏幕都落在地平线圆内，等于把整片天空压暗。
-  const hz = new Path2D();
+  // 地平圈 + 地面遮罩。
+  // 地面在地平线圆的哪一侧，只取决于视角中心在天上还是地下：
+  //   viewAlt >= 0 → 地面在圆外；viewAlt < 0 → 地面在圆内。
+  // 不能用「找一个地面采样点 + isPointInPath」：视角正好在地平线上时，地平线在球极
+  // 投影里退化成一条直线、路径面积为 0，evenodd 会把整个屏幕填满，拖动经过地平线时
+  // 就会整屏忽明忽暗。这里按 viewAlt 的符号决定内外，并在 |viewAlt|<0.05° 时用极小
+  // 偏移重建遮罩（屏幕上的偏差 <1px），彻底避开退化。
+  const maskAlt = Math.abs(sc.viewAlt) < 0.05 ? (sc.viewAlt < 0 ? -0.05 : 0.05) : sc.viewAlt;
+  const maskFrame = maskAlt === sc.viewAlt ? sc.frame : viewFrame(maskAlt, sc.viewAz, sc.roll || 0);
+  const hzFill = new Path2D();
+  for (let az = 0; az <= 360; az += 2) {
+    const p = projectView(0, az, maskFrame, sc.cx, sc.cy, sc.Rp);
+    az === 0 ? hzFill.moveTo(p.x, p.y) : hzFill.lineTo(p.x, p.y);
+  }
+  hzFill.closePath();
+  // 边框仍用实际视角的水平圈，保证与天球几何一致
+  const hzLine = new Path2D();
   for (let i = 0; i < sc.horizon.length; i += 2) {
-    i === 0 ? hz.moveTo(sc.horizon[i], sc.horizon[i + 1]) : hz.lineTo(sc.horizon[i], sc.horizon[i + 1]);
+    i === 0 ? hzLine.moveTo(sc.horizon[i], sc.horizon[i + 1]) : hzLine.lineTo(sc.horizon[i], sc.horizon[i + 1]);
   }
-  hz.closePath();
-  ctx.strokeStyle = 'rgba(160,190,255,0.6)'; ctx.lineWidth = 1.6; ctx.stroke(hz);
-  let groundPt = null;
-  for (const [gx, gy] of [[w / 2, h], [0, h], [w, h], [0, 0], [w, 0], [w / 2, 0]]) {
-    const v = unprojectView(sc, gx, gy);
-    if (v && v.alt < 0) { groundPt = [gx, gy]; break; }
-  }
-  if (groundPt) {
-    ctx.fillStyle = 'rgba(26,38,68,0.34)';
-    if (ctx.isPointInPath(hz, groundPt[0], groundPt[1])) {
-      ctx.fill(hz);                                  // 地面在地平线圆内
-    } else {
-      hz.rect(-4, -4, w + 8, h + 8);
-      ctx.fill(hz, 'evenodd');                       // 地面在地平线圆外（常态）
-    }
+  hzLine.closePath();
+  ctx.strokeStyle = 'rgba(160,190,255,0.6)'; ctx.lineWidth = 1.6; ctx.stroke(hzLine);
+  ctx.fillStyle = 'rgba(26,38,68,0.34)';
+  if (sc.viewAlt < 0) {
+    ctx.fill(hzFill);                                    // 地面在圆内
+  } else {
+    hzFill.rect(-4, -4, w + 8, h + 8);
+    ctx.fill(hzFill, 'evenodd');                         // 地面在圆外（常态）
   }
   // 方位标
   ctx.fillStyle = 'rgba(190,210,255,0.9)'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
