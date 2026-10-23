@@ -811,6 +811,8 @@ function quizState() {
     opts: { lines: quiz.mode === 'star', names: true, starNames: false, messier: false, messierLabels: false, planets: quiz.mode === 'star', planetNames: false, grid: false, ast: false } };
 }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; }
+// 仅取最佳观测月份（bestMonth 已按北京时间 21:00 计算）
+function bmMonth(m) { return bestMonth(m.ra, m.dec, state.lat, state.lon).month; }
 // 测验用的星座集合：北半球（中低纬）肉眼可见、形态可辨认的常见星座。
 // 南天-only（南十字、南极座这类在北半球常年看不到的）不进题库，选项也不出。
 const QUIZ_CONS = Object.keys(CON_LINES).filter(d => {
@@ -841,6 +843,7 @@ function nextQuestion() {
         <div class="qh-tip">在左侧星图上找到它并点击（星图画出完整星空，候选星都亮于 2.2 等，可按亮度与星座形状推断）</div>
       </div>`;
     quizCanvas.style.display = '';
+    $('#quizphoto').classList.add('hidden');
     redrawQuiz();
   } else if (quiz.mode === 'con') {
     const desigs = QUIZ_CONS;
@@ -849,12 +852,13 @@ function nextQuestion() {
     quiz.cur = { correct, opts };
     $('#quiz-question').innerHTML = `这是哪个星座的图形？`;
     quizCanvas.style.display = '';
+    $('#quizphoto').classList.add('hidden');
     drawConFigure(correct, quizCanvas);
     $('#quiz-options').innerHTML = opts.map(o => `<button data-k="${o}">${CON_INFO[o].zh}</button>`).join('');
     $('#quiz-options').onclick = e => answerCon(e);
   } else {
-    // 只考有官方配图的 45 个深空天体（M31/M42/NGC 7000 这类著名目标），
-    // 配合右栏配图四选一；干扰项也从同一池子里选，保证都是有图的。
+    // 看图认深空：只考有官方配图的 45 个天体，照片就是题面；
+    // 提示只保留月份（类型/星座会直接把答案漏给认识图的人）。
     const pool = (typeof PHOTOS !== 'undefined' ? Object.keys(PHOTOS) : [])
       .map(k => DEEPSKY.find(m => m.id === k)).filter(m => m && m.ra != null);
     const correct = pool[Math.floor(Math.random() * pool.length)];
@@ -864,9 +868,13 @@ function nextQuestion() {
     while (distract.length < 3 && others.length) distract.push(others.splice(Math.floor(Math.random() * others.length), 1)[0]);
     const opts = shuffle([correct, ...distract]);
     quiz.cur = { correct, opts };
-    const bm = bestMonth(correct.ra, correct.dec, state.lat, state.lon);
-    $('#quiz-question').innerHTML = `看图认天体，它是哪一个？（提示：${(M_TYPES[correct.t] || {}).zh} · ${CON_ZH(correct.c)} · 最佳${bm.month}月）`;
+    const p = PHOTOS[correct.id];
+    const img = $('#quizphoto');
     quizCanvas.style.display = 'none';
+    img.classList.remove('hidden');
+    img.src = p.src1280;
+    img.alt = '深空天体照片（答对后显示名称）';
+    $('#quiz-question').innerHTML = `看图认天体，它是哪一个？（提示：最佳观测 ${bmMonth(correct)}月）`;
     $('#quiz-options').innerHTML = opts.map(o => `<button data-k="${o.id}">${o.id}</button>`).join('');
     $('#quiz-options').onclick = e => answerMessier(e);
   }
@@ -932,9 +940,11 @@ function answerMessier(e) {
     else x.disabled = true;
   });
   const m = quiz.cur.correct;
-  const fig = photoFigure(m.id);
-  $('#quiz-feedback').innerHTML = `${fig || ''}
-    <div style="color:${ok ? 'var(--ok)' : 'var(--bad)'};font-weight:bold">${ok ? '✔ 答对了！' : '✘ 正确答案是 ' + m.id}</div>
+  // 照片已在题面显示，反馈只给结论与说明；照片可点开大图（此刻不再泄题）
+  const img = $('#quizphoto');
+  img.alt = PHOTOS[m.id] ? PHOTOS[m.id].title : '';
+  $('#quiz-feedback').innerHTML =
+    `<div style="color:${ok ? 'var(--ok)' : 'var(--bad)'};font-weight:bold">${ok ? '✔ 答对了！' : '✘ 正确答案是 ' + m.id}</div>
     <div class="note"><b>${m.id}${m.zh ? ' · ' + m.zh : ''}</b>（${(M_TYPES[m.t] || {}).zh} · ${CON_ZH(m.c)} · ${m.mag == null ? '?' : m.mag}等 · ${m.d || ''}）${m.note ? '<br>' + m.note : ''}</div>`;
   $('#quiz-next').classList.remove('hidden');
 }

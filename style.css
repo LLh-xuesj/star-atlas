@@ -376,6 +376,8 @@ select option{background:#111726; color:var(--text)}
 }
 #quizsky{width:min(100%,58vh); aspect-ratio:1; display:block; cursor:crosshair; touch-action:none; border-radius:14px}
 @container (min-width:1px){#quizsky{width:min(100cqw - 4px, 100cqh - 4px)}}
+/* 看图认深空：题面照片（contain 适配容器，不裁剪） */
+#quizphoto{max-width:100%; max-height:100%; width:auto; height:auto; border-radius:14px; user-select:none}
 
 #quiz-rail{
   display:flex; flex-direction:column; gap:13px; min-height:0; overflow-y:auto;
