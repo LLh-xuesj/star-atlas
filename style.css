@@ -478,3 +478,46 @@ select option{background:#111726; color:var(--text)}
   #tabs button{padding:6px 12px}
   #legend{display:none}
 }
+
+/* ============================ 触屏 / 小屏优化 ============================ */
+/* 触屏：点击目标放大到 ≥40px，去掉 hover 态依赖 */
+@media (pointer:coarse){
+  .ck{padding:9px 14px; font-size:12.5px}
+  .iconbtn{width:38px; height:38px}
+  .iconbtn svg{width:16px;height:16px}
+  #zoomdock button{width:50px; height:46px}
+  #zoomdock svg{width:19px;height:19px}
+  #zoomdock{right:10px; bottom:12px}
+  #quiz-options button{padding:14px 16px; font-size:14px}
+  .subtabs button,.quiz-modes button{padding:9px 15px}
+  #tabs button{padding:9px 15px}
+  #quiz-next{padding:13px 26px}
+  .row{padding:11px 12px}
+  #closeinfo{width:40px; height:40px}
+  #closeinfo svg{width:17px;height:17px}
+  #lbclose{width:46px; height:46px; top:12px; right:12px}
+}
+/* 小屏：工具条分区改两行流式；经纬度/日期换行不挤爆；时间页签精简 */
+@media (max-width:680px){
+  #toolbar{padding:8px 10px; gap:7px 6px}
+  #toolbar .tgroup{flex-wrap:wrap}
+  #toolbar .tgroup + .tgroup{padding-left:8px}
+  #city{max-width:104px}
+  #lat{width:60px} #lon{width:64px}
+  #dt{width:158px}
+  #speed{min-width:70px}
+  .ck{padding:7px 10px; font-size:11.5px}
+  #viewhud{left:10px; top:10px; padding:5px 10px; font-size:11px}
+  #infopanel{width:calc(100% - 20px); top:10px; right:10px; bottom:10px; padding:18px 16px 20px}
+  .photo img{aspect-ratio:4/3}
+  #quiz-rail{max-height:none}
+  #quiz-body{grid-template-rows:minmax(0,1fr) auto; padding:10px}
+  #quizsky{width:100%}
+  @container (min-width:1px){#quizsky{width:min(100cqw - 4px, 100cqh - 4px)}}
+  .atlas-body{grid-template-rows:40% minmax(0,1fr); padding:10px}
+  #atlas-detail{padding:16px 16px 22px}
+  .about{padding:18px 14px 60px}
+  .about td:first-child{white-space:normal}
+  #toast{font-size:11.5px}
+  body{font-size:13px}
+}

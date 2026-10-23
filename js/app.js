@@ -231,6 +231,51 @@ canvas.addEventListener('wheel', e => {
 }, { passive: false });
 canvas.addEventListener('dblclick', () => resetView(true));
 
+// ---------- 双指捏合缩放（触屏）----------
+// 两指中点保持不动，间距比例映射到 zoom；捏合期间禁用单指拖动。
+let pinch = null;
+function pinchPoint(e, rect) {
+  const xs = [...e.touches].map(t => t.clientX - rect.left), ys = [...e.touches].map(t => t.clientY - rect.top);
+  return {
+    x: xs.reduce((a, b) => a + b, 0) / xs.length,
+    y: ys.reduce((a, b) => a + b, 0) / ys.length,
+    span: Math.hypot(xs[0] - xs[1], ys[0] - ys[1]),
+  };
+}
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length !== 2) return;
+  e.preventDefault(); anim.on = false;
+  const rect = canvas.getBoundingClientRect();
+  const p = pinchPoint(e, rect);
+  if (!(p.span > 10)) return;
+  const sc = freshScene();
+  pinch = { rect, startZoom: state.zoom, startSpan: p.span, anchor: sc ? unprojectView(sc, p.x, p.y) : null };
+  if (drag) { drag = null; canvas.style.cursor = 'grab'; }   // 第二根手指落下，取消单指拖动
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  if (!pinch || e.touches.length !== 2) return;
+  e.preventDefault();
+  const p = pinchPoint(e, pinch.rect);
+  if (!(pinch.startSpan > 10) || !(p.span > 0)) return;
+  const z2 = clamp(pinch.startZoom * p.span / pinch.startSpan, ZOOM_MIN, ZOOM_MAX);
+  if (z2 === state.zoom) return;
+  state.zoom = z2;
+  if (pinch.anchor) {   // 双指中点处天体缩放前后停在同一个像素上
+    const w = canvas.clientWidth, h = canvas.clientHeight, R = viewR();
+    const s = solveCenterForAnchor(pinch.anchor.alt, pinch.anchor.az, p.x, p.y, state.viewAlt, state.viewAz, z2, w, h, R, state.roll || 0);
+    if (s.err < 2) { state.viewAlt = s.alt; state.viewAz = s.az; }
+  }
+  dirty();
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  if (!pinch || e.touches.length >= 2) return;
+  pinch = null;
+  updateViewHud(true);
+  // 拦掉捏合结束后多出来的合成 click
+  suppressClick = true; setTimeout(() => { suppressClick = false; }, 250);
+}, { passive: false });
+canvas.addEventListener('touchcancel', () => { pinch = null; }, { passive: false });
+
 // 拖动平移（pointer 事件，鼠标/触摸通用）：水平＝转方位，垂直＝抬降视角；高度角硬钳、地平线始终水平
 let drag = null, suppressClick = false;
 canvas.addEventListener('pointerdown', e => {
@@ -245,10 +290,13 @@ canvas.addEventListener('pointerdown', e => {
     rect: canvas.getBoundingClientRect(), w: canvas.clientWidth, h: canvas.clientHeight, R: viewR() };
   suppressClick = false;
   canvas.style.cursor = 'grabbing';
+  if (e.pointerType !== 'mouse' && e.isPrimary === false && drag) drag.secondFinger = true;   // 双指：冻结单指平移
   try { canvas.setPointerCapture(e.pointerId); } catch { }
 });
 canvas.addEventListener('pointermove', e => {
+  if (pinch) return;   // 双指捏合期间不处理单指逻辑
   if (drag && e.pointerId === drag.id) {
+    if (e.pointerType !== 'mouse' && drag.secondFinger) return;   // 双指期间冻结单指平移
     const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     drag.x = e.clientX; drag.y = e.clientY;
     drag.moved += Math.abs(dx) + Math.abs(dy);
@@ -277,9 +325,13 @@ canvas.addEventListener('pointermove', e => {
 });
 function endDrag(e) {
   if (!drag || (e && e.pointerId !== drag.id)) return;
+  const wasTwo = drag.secondFinger;
   try { canvas.releasePointerCapture(drag.id); } catch { }
   drag = null; canvas.style.cursor = 'grab';
   updateViewHud(true);   // 拖动结束后强制刷新一次读数（拖动中限频）
+  if (wasTwo) {   // 双指松开后拦一次合成 click
+    suppressClick = true; setTimeout(() => { suppressClick = false; }, 250);
+  }
 }
 canvas.addEventListener('pointerup', endDrag);
 canvas.addEventListener('pointercancel', endDrag);
@@ -759,6 +811,15 @@ function quizState() {
     opts: { lines: quiz.mode === 'star', names: true, starNames: false, messier: false, messierLabels: false, planets: quiz.mode === 'star', planetNames: false, grid: false, ast: false } };
 }
 function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[a[i], a[j]] = [a[j], a[i]]; } return a; }
+// 测验用的星座集合：北半球（中低纬）肉眼可见、形态可辨认的常见星座。
+// 南天-only（南十字、南极座这类在北半球常年看不到的）不进题库，选项也不出。
+const QUIZ_CONS = Object.keys(CON_LINES).filter(d => {
+  const info = CON_INFO[d];
+  if (!info) return false;
+  const dec = info.label[1];
+  // 图形质心赤纬 > -45°（可延伸到南半球低空），保证在北纬 30–40° 有机会升到 8° 以上
+  return dec > -45;
+});
 function nextQuestion() {
   quiz.locked = false; quiz.answered = null;
   $('#quiz-feedback').innerHTML = '';
@@ -782,7 +843,7 @@ function nextQuestion() {
     quizCanvas.style.display = '';
     redrawQuiz();
   } else if (quiz.mode === 'con') {
-    const desigs = Object.keys(CON_LINES);
+    const desigs = QUIZ_CONS;
     const correct = desigs[Math.floor(Math.random() * desigs.length)];
     const opts = shuffle([correct, ...shuffle(desigs.filter(d => d !== correct)).slice(0, 3)]);
     quiz.cur = { correct, opts };
@@ -792,7 +853,10 @@ function nextQuestion() {
     $('#quiz-options').innerHTML = opts.map(o => `<button data-k="${o}">${CON_INFO[o].zh}</button>`).join('');
     $('#quiz-options').onclick = e => answerCon(e);
   } else {
-    const pool = MESSIER.filter(m => m.ra != null);
+    // 只考有官方配图的 45 个深空天体（M31/M42/NGC 7000 这类著名目标），
+    // 配合右栏配图四选一；干扰项也从同一池子里选，保证都是有图的。
+    const pool = (typeof PHOTOS !== 'undefined' ? Object.keys(PHOTOS) : [])
+      .map(k => DEEPSKY.find(m => m.id === k)).filter(m => m && m.ra != null);
     const correct = pool[Math.floor(Math.random() * pool.length)];
     const sameType = pool.filter(m => m.t === correct.t && m.id !== correct.id);
     const others = pool.filter(m => m.t !== correct.t);
@@ -801,7 +865,7 @@ function nextQuestion() {
     const opts = shuffle([correct, ...distract]);
     quiz.cur = { correct, opts };
     const bm = bestMonth(correct.ra, correct.dec, state.lat, state.lon);
-    $('#quiz-question').innerHTML = `这个梅西耶天体是？（提示：${(M_TYPES[correct.t] || {}).zh} · ${CON_ZH(correct.c)} · ${correct.mag == null ? '?' : correct.mag}等 · ${correct.d || ''} · 最佳${bm.month}月）`;
+    $('#quiz-question').innerHTML = `看图认天体，它是哪一个？（提示：${(M_TYPES[correct.t] || {}).zh} · ${CON_ZH(correct.c)} · 最佳${bm.month}月）`;
     quizCanvas.style.display = 'none';
     $('#quiz-options').innerHTML = opts.map(o => `<button data-k="${o.id}">${o.id}</button>`).join('');
     $('#quiz-options').onclick = e => answerMessier(e);
@@ -868,8 +932,10 @@ function answerMessier(e) {
     else x.disabled = true;
   });
   const m = quiz.cur.correct;
-  $('#quiz-feedback').innerHTML = `<div style="color:${ok ? 'var(--ok)' : 'var(--bad)'};font-weight:bold">${ok ? '✔ 答对了！' : '✘ 正确答案是 ' + m.id}</div>
-    <div class="note"><b>${m.id} ${m.zh || ''}</b>（${(M_TYPES[m.t] || {}).zh} · ${CON_ZH(m.c)} · ${m.mag == null ? '?' : m.mag}等 · ${m.d || ''}）${m.note ? '<br>' + m.note : ''}</div>`;
+  const fig = photoFigure(m.id);
+  $('#quiz-feedback').innerHTML = `${fig || ''}
+    <div style="color:${ok ? 'var(--ok)' : 'var(--bad)'};font-weight:bold">${ok ? '✔ 答对了！' : '✘ 正确答案是 ' + m.id}</div>
+    <div class="note"><b>${m.id}${m.zh ? ' · ' + m.zh : ''}</b>（${(M_TYPES[m.t] || {}).zh} · ${CON_ZH(m.c)} · ${m.mag == null ? '?' : m.mag}等 · ${m.d || ''}）${m.note ? '<br>' + m.note : ''}</div>`;
   $('#quiz-next').classList.remove('hidden');
 }
 function recordAnswer(ok) {
@@ -898,11 +964,11 @@ $('#aboutcontent').innerHTML = `
   <tr><th>想做什么</th><th>怎么做</th></tr>
   <tr><td>看今晚的星空</td><td>选好城市，保持「实时」勾选。初始为<b>朝南平视</b>（视角高 38°、放大 3×，视场约 74°），地平线压在画面下缘——与站在户外抬头所见一致。</td></tr>
   <tr><td>转动视角看别处</td><td>按住拖动＝平移天空：<b>左右拖</b>＝转方位（东西方向转过去），<b>上下拖</b>＝抬高/降低视角。视角高度角到 +89.6°（天顶）或 −80° 就<b>彻底停住</b>，绝不会翻到天顶另一侧；地平线始终保持水平，不会出现画面倾斜或上下颠倒。近天顶时左右拖动会让星空绕天顶旋转（这就是"抬头转圈"的感觉）。双击星图（或点右下角 ⌂ 按钮）立刻复位成正立朝南。</td></tr>
-  <tr><td>放大看细节</td><td>滚轮缩放 1×–8×，以<b>光标位置</b>为锚点固定不动（不是以屏幕中心缩放）；也可用星图右下角的 ＋ / －，点 ⌂ 复位。</td></tr>
+  <tr><td>放大看细节</td><td>滚轮缩放 1×–8×，以<b>光标位置</b>为锚点固定不动（不是以屏幕中心缩放）；触屏双指捏合缩放（中点锚定）；也可用星图右下角的 ＋ / －，点 ⌂ 复位。</td></tr>
   <tr><td>找一颗星/深空天体</td><td>在「图鉴」里搜索，点「📍 在星图中居中定位」——星图会自动把目标转到正中并放大，若此刻不可见会自动跳到最佳观测时间。</td></tr>
   <tr><td>看真实照片</td><td>「图鉴」→「深空天体」，选中梅西耶或 NGC 对象；详情页顶部是官方大图，点图片可全屏查看，图下有 credit 和原图来源。</td></tr>
   <tr><td>模拟某晚的星空</td><td>取消「实时」，设定日期时间；或按播放键让时间流动（×600 常用，可看星星东升西落）。</td></tr>
-  <tr><td>自测认星</td><td>「测验」→ 认亮星：按提示在左侧大星图上点击目标星；认星座与梅西耶则是四选一。</td></tr>
+  <tr><td>自测认星</td><td>「测验」→ 认亮星：按提示在左侧大星图上点击目标星；认星座（北半球可见的 63 个）与「看图认深空」（45 个有官方配图的对象）是四选一。</td></tr>
 </table>
 <h3>认星学习路线</h3>
 <div class="note">
